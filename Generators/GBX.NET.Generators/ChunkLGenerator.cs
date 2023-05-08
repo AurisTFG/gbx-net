@@ -1,6 +1,7 @@
 ﻿using GBX.NET.Generators.Extensions;
 using Microsoft.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.ConstrainedExecution;
 using System.Text.RegularExpressions;
 
 namespace GBX.NET.Generators;
@@ -45,7 +46,7 @@ public class ChunkLGenerator : SourceGenerator
             using var reader = new StreamReader(chunkLFile);
             var headerLine = reader.ReadLine();
 
-            var headerMatch = Regex.Match(headerLine.Trim(), @"(\w+)\s0x([0-9a-fA-F]{8})(\s*\/\/(.*))?$"); // Example: CGameCtnAnchoredObject 0x03101000 // comment
+            var headerMatch = Regex.Match(headerLine.Trim(), @"^(\w+)\s0x([0-9a-fA-F]{8})(\s*\/\/(.*))?$"); // Example: CGameCtnAnchoredObject 0x03101000 // comment
 
             if (!headerMatch.Success)
             {
@@ -95,7 +96,7 @@ public class ChunkLGenerator : SourceGenerator
                     throw new Exception("Invalid syntax after header");
                 }
 
-                var metadataMatch = Regex.Match(lineStr, @"-\s*(\w+):(.+?)(\s*\/\/(.*))?$");
+                var metadataMatch = Regex.Match(lineStr, @"^-\s*(\w+):(.+?)(\s*\/\/(.*))?$");
                 var metadataName = metadataMatch.Groups[1].Value.Trim();
                 var metadataValue = metadataMatch.Groups[2].Value.Trim();
             }
@@ -159,7 +160,7 @@ public class ChunkLGenerator : SourceGenerator
 
     private static string? ParseChunk(StreamReader reader, string chunkLine, int classId, int indent)
     {
-        var chunkMatch = Regex.Match(chunkLine, @"0x([0-9a-fA-F]{8}|[0-9a-fA-F]{3})(?=\s|$)\s*(skippable)?");
+        var chunkMatch = Regex.Match(chunkLine, @"^0x([0-9a-fA-F]{8}|[0-9a-fA-F]{3})(?=\s|$)\s*(skippable)?");
 
         if (!chunkMatch.Success)
         {
@@ -178,6 +179,11 @@ public class ChunkLGenerator : SourceGenerator
             throw new Exception("Invalid chunk id");
         }
 
+        return ReadWholeIndentation(reader, chunkId, indent);
+    }
+
+    private static string? ReadWholeIndentation(StreamReader reader, int chunkId, int indent)
+    {
         while (true)
         {
             var lineStr = reader.ReadLine();
@@ -207,14 +213,66 @@ public class ChunkLGenerator : SourceGenerator
                 return lineStr;
             }
 
-            ParseChunkMember(line, chunkId, lineIndent);
+            while (true)
+            {
+                lineStr = ParseChunkMember(reader, lineStr, chunkId, lineIndent);
+
+                if (lineStr is null)
+                {
+                    break;
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    private static string? ParseChunkMember(StreamReader reader, string line, int chunkId, int lineIndent)
+    {
+        var memberMatch = Regex.Match(line, @"^(\w+)\s?(.+?)?\s*(\/\/(.*))?$");
+
+        if (!memberMatch.Success)
+        {
+            throw new Exception("Invalid chunk member syntax");
+        }
+
+        if (string.Equals(memberMatch.Groups[1].Value, "if", StringComparison.OrdinalIgnoreCase))
+        {
+            return ParseIfStatement(reader, memberMatch.Groups[2].Value, chunkId, lineIndent);
         }
 
         return null;
     }
 
-    private static void ParseChunkMember(ReadOnlySpan<char> line, int chunkId, int lineIndent)
+    private static string? ParseIfStatement(StreamReader reader, string statement, int chunkId, int lineIndent)
     {
+        var versionComparison = MatchVersion(statement);
+
+        if (versionComparison is not null)
+        {
+            return ReadWholeIndentation(reader, chunkId, lineIndent);
+        }
+
+        // (Flags & 4) = 4
+        var averageStatementMatch = Regex.Match(statement, @"^(.+?)\s*(>=|<=|==|>|<|=)\s*(.+?)(\s*\/\/(.*))?$");
+
+        if (averageStatementMatch.Success)
+        {
+            return ReadWholeIndentation(reader, chunkId, lineIndent);
+        }
+
+        return null;
+    }
+
+    private static (string sign, int ver)? MatchVersion(string statement)
+    {
+        var shortVersionMatch = Regex.Match(statement, @"^(>=|<=|==|>|<|=)\s*v([0-9]+)(\s*\/\/(.*))?$");
+
+        if (shortVersionMatch.Success)
+        {
+            return (shortVersionMatch.Groups[1].Value, int.Parse(shortVersionMatch.Groups[2].Value));
+        }
         
+        return null;
     }
 }
