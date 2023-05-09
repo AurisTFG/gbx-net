@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace GBX.NET.Generators;
 
 [Generator]
-public class ChunkLGenerator : SourceGenerator
+public class ChunkLToCSharpGenerator : SourceGenerator
 {
     public override bool Debug => true;
 
