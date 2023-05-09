@@ -176,7 +176,8 @@ class ChunkL
 
         chunk = new()
         {
-            ChunkId = chunkId
+            ChunkId = chunkId,
+            Skippable = chunkMatch.Groups[2].Value.Equals("skippable", StringComparison.OrdinalIgnoreCase)
         };
 
         return ReadWholeIndentation(reader, chunkId, indent, chunk);

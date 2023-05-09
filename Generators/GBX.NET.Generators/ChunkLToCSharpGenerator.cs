@@ -46,6 +46,4 @@ public class ChunkLToCSharpGenerator : SourceGenerator
             engineTypes.TryGetValue($"{ns}::{chunkL.ClassName}", out var existingType);
         }
     }
-
-    
 }
