@@ -5,7 +5,7 @@
 /// </summary>
 /// <remarks>ID: 0x03101000</remarks>
 [Node(0x03101000)]
-public class CGameCtnAnchoredObject : CMwNod
+public partial class CGameCtnAnchoredObject : CMwNod
 {
     #region Enums
 

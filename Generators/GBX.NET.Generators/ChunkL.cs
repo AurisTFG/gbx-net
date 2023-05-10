@@ -64,7 +64,7 @@ class ChunkL
             }
 
             var metadataMatch = Regex.Match(lineStr, @"^-\s*(\w+):(.+?)(\s*\/\/(.*))?$");
-            var metadataName = metadataMatch.Groups[1].Value.Trim();
+            var metadataName = metadataMatch.Groups[1].Value.Trim().ToLowerInvariant();
             var metadataValue = metadataMatch.Groups[2].Value.Trim();
 
             metadata.Add(metadataName, metadataValue);
