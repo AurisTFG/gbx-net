@@ -3,30 +3,32 @@ CGameCtnAnchoredObject 0x03101000
 - metadata2: y
 
 0x002
- version
- ident ItemModel
- vec3 PitchYawRoll
- byte3 BlockUnitCoord
- id AnchorTreeId
- vec3 AbsolutePositionInMap // some comment
- node WaypointSpecialProperty
+ version (default=7) // Version of the chunk. For the lastst TM2 version, version 7 the latest, in TM2020, the latest known version is 8.
+ ident ItemModel (exact) // Name of the item with collection and author.
+ vec3 PitchYawRoll // Pitch, yaw and roll of the item in radians.
+ byte3 BlockUnitCoord (exact) // Block coordinates that the item is approximately located in. It doesn't have to be provided most of the time.
+ id AnchorTreeId (exact)
+ vec3 AbsolutePositionInMap (exact) // The X, Y and Z position in the real world space of the item.
+ CGameWaypointSpecialProperty? WaypointSpecialProperty (exact) // If the item is a waypoint, contains inner waypoint info, otherwise null.
  if < v5
   int
  if >= v4
-  int16 Flags
+  int16 Flags // Flags of the item.
   if >= v5
-   vec3 PivotPosition
+   vec3 PivotPosition // Pivot position of the item. Useful for making rotations around a different point than center.
    if >= v6
-    float Scale
+    float Scale // Scale of the item. This value currently doesn't have any effect.
     if >= v7
-     if (Flags & 4) = 4
-      fileref PackDesc
+     if (n.Flags & 4) = 4
+      fileref? PackDesc // Skin used on the item.
      if >= v8
       vec3
       vec3
       if >= v9
        throw v
 
-0x004 skippable
+0x004 (skippable)
  version
  int
+
+0x005 (skippable, ignore)

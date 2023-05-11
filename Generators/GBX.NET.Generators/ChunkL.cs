@@ -103,6 +103,8 @@ class ChunkL
 
         while (true)
         {
+            lineStr ??= reader.ReadLine();
+
             if (lineStr is null)
             {
                 break;
@@ -110,6 +112,7 @@ class ChunkL
 
             if (string.IsNullOrWhiteSpace(lineStr))
             {
+                lineStr = null!;
                 continue;
             }
 
@@ -119,6 +122,7 @@ class ChunkL
 
             if (line[0] is '/' && line.Length >= 2 && line[1] is '/')
             {
+                lineStr = null!;
                 continue;
             }
 
@@ -136,7 +140,7 @@ class ChunkL
                 break;
             }
 
-            lineStr = reader.ReadLine();
+            lineStr = chunkLine;
         }
 
         return new()
@@ -155,7 +159,7 @@ class ChunkL
 
     private static string? ParseChunk(StreamReader reader, string chunkLine, int classId, int indent, out ChunkLChunk chunk)
     {
-        var chunkMatch = Regex.Match(chunkLine, @"^0x([0-9a-fA-F]{8}|[0-9a-fA-F]{3})(?=\s|$)\s*(skippable)?");
+        var chunkMatch = Regex.Match(chunkLine, @"^0x([0-9a-fA-F]{8}|[0-9a-fA-F]{3})(?=\s|$)\s*(\((.*)\))?\s*(\/\/(.*))?$");
 
         if (!chunkMatch.Success)
         {
@@ -174,16 +178,20 @@ class ChunkL
             throw new Exception("Invalid chunk id");
         }
 
+        var optionsDict = ParseOptions(chunkMatch.Groups[3].Value);
+
         chunk = new()
         {
             ChunkId = chunkId,
-            Skippable = chunkMatch.Groups[2].Value.Equals("skippable", StringComparison.OrdinalIgnoreCase)
+            Skippable = optionsDict.ContainsKey("skippable"),
+            Ignored = optionsDict.ContainsKey("ignored") || optionsDict.ContainsKey("ignore"),
+            Comment = chunkMatch.Groups[chunkMatch.Groups.Count - 1].Value
         };
 
         return ReadWholeIndentation(reader, chunkId, indent, chunk);
     }
 
-    private static string? ReadWholeIndentation(StreamReader reader, int chunkId, int indent, IChunkLMemberList memberList)
+    private static string? ReadWholeIndentation(StreamReader reader, int chunkId, int indent, IChunkLMemberList memberList, int minVersion = 0)
     {
         var lineStr = default(string);
 
@@ -218,7 +226,7 @@ class ChunkL
                 return lineStr;
             }
 
-            lineStr = ParseChunkMember(reader, trimmedLineStr, chunkId, lineIndent, out IChunkLMember member);
+            lineStr = ParseChunkMember(reader, trimmedLineStr, chunkId, lineIndent, minVersion, out IChunkLMember member);
 
             memberList.Members.Add(member);
         }
@@ -226,32 +234,42 @@ class ChunkL
         return null;
     }
 
-    private static string? ParseChunkMember(StreamReader reader, string line, int chunkId, int lineIndent, out IChunkLMember member)
+    private static string? ParseChunkMember(StreamReader reader, string line, int chunkId, int lineIndent, int minVersion, out IChunkLMember member)
     {
-        var memberMatch = Regex.Match(line, @"^(\w+)\s?(.+?)?\s*(\/\/(.*))?$");
+        var ifMatch = Regex.Match(line, @"^if\s(.+?)?\s*(\((.*)\))?\s*(\/\/(.*))?$");
+
+        if (ifMatch.Success)
+        {
+            var l = ParseIfStatement(reader, ifMatch.Groups[1].Value, chunkId, lineIndent, minVersion, out var ifStatement);
+            member = ifStatement;
+            return l;
+        }
+
+        var memberMatch = Regex.Match(line, @"^(\w+)(\?)?\s?(\w+?)?\s*(\((.*)\))?\s*(\/\/(.*))?$");
 
         if (!memberMatch.Success)
         {
             throw new Exception("Invalid chunk member syntax");
         }
-
-        if (string.Equals(memberMatch.Groups[1].Value, "if", StringComparison.OrdinalIgnoreCase))
-        {
-            var l = ParseIfStatement(reader, memberMatch.Groups[2].Value, chunkId, lineIndent, out var ifStatement);
-            member = ifStatement;
-            return l;
-        }
+        
+        var optionsDict = ParseOptions(memberMatch.Groups[5].Value);
 
         member = new ChunkLMember()
         {
             Type = memberMatch.Groups[1].Value,
-            Name = memberMatch.Groups[2].Value
+            Nullable = memberMatch.Groups[2].Value == "?",
+            Name = memberMatch.Groups[3].Value,
+            ExactlyNamed = optionsDict.TryGetValue("exact", out var exact) && exact == "",
+            ExactName = optionsDict.TryGetValue("exact", out var exactName) ? exactName : null,
+            DefaultValue = optionsDict.TryGetValue("default", out var defaultVal) ? defaultVal : null,
+            Comment = memberMatch.Groups[memberMatch.Groups.Count - 1].Value.Trim(),
+            MinVersion = minVersion
         };
 
         return null;
     }
 
-    private static string? ParseIfStatement(StreamReader reader, string statement, int chunkId, int lineIndent, out ChunkLIfStatement member)
+    private static string? ParseIfStatement(StreamReader reader, string statement, int chunkId, int lineIndent, int minVersion, out ChunkLIfStatement member)
     {
         var versionComparison = MatchVersion(statement);
 
@@ -261,10 +279,12 @@ class ChunkL
             {
                 Left = "version",
                 Sign = versionComparison.Value.sign,
-                Right = versionComparison.Value.ver.ToString(), // improve?
+                Right = versionComparison.Value.ver.ToString(),
             };
 
-            return ReadWholeIndentation(reader, chunkId, lineIndent, member);
+            minVersion = versionComparison.Value.sign is "=" or "==" or ">=" ? versionComparison.Value.ver : 0;
+
+            return ReadWholeIndentation(reader, chunkId, lineIndent, member, minVersion);
         }
 
         // (Flags & 4) = 4
@@ -279,7 +299,7 @@ class ChunkL
                 Right = averageStatementMatch.Groups[3].Value, // improve?
             };
 
-            return ReadWholeIndentation(reader, chunkId, lineIndent, member);
+            return ReadWholeIndentation(reader, chunkId, lineIndent, member, minVersion);
         }
 
         throw new Exception("Invalid if statement");
@@ -295,5 +315,28 @@ class ChunkL
         }
 
         return null;
+    }
+
+    private static Dictionary<string, string> ParseOptions(string optionsString)
+    {
+        var options = optionsString.Trim().Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+        var optionsDict = new Dictionary<string, string>();
+
+        foreach (var option in options)
+        {
+            var optionMatch = Regex.Match(option.Trim(), @"^(\w+)(?:\s*=\s*(.+))?$");
+
+            if (!optionMatch.Success)
+            {
+                throw new Exception($"Invalid chunk option ({option})");
+            }
+
+            var optionName = optionMatch.Groups[1].Value.Trim().ToLowerInvariant();
+            var optionValue = optionMatch.Groups[2].Value.Trim();
+
+            optionsDict.Add(optionName, optionValue);
+        }
+
+        return optionsDict;
     }
 }
