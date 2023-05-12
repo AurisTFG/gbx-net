@@ -1,4 +1,6 @@
-﻿namespace GBX.NET.Generators;
+﻿using System.Text;
+
+namespace GBX.NET.Generators;
 
 public interface IChunkLMember
 {
@@ -18,6 +20,49 @@ class ChunkLMember : IChunkLMember
 
     public override string ToString()
     {
-        return $"{Type} {Name}";
+        var sb = new StringBuilder();
+        sb.Append(Type);
+
+        if (Nullable)
+        {
+            sb.Append('?');
+        }
+
+        if (!string.IsNullOrEmpty(Name))
+        {
+            sb.Append(' ');
+            sb.Append(Name);
+        }
+
+        if (ExactlyNamed || ExactName is not null || DefaultValue is not null)
+        {
+            sb.Append(" (");
+
+            var pairs = new (string, string?)[]
+            {
+                ("exact", ExactlyNamed ? "" : ExactName),
+                ("default", DefaultValue)
+            };
+
+            sb.Append(string.Join(", ", pairs.Where(x => x.Item2 is not null).Select(x =>
+            {
+                if (x.Item1 == "exact" && x.Item2 == "")
+                {
+                    return x.Item1;
+                }
+                
+                return $"{x.Item1}={x.Item2}";
+            })));
+
+            sb.Append(")");
+        }
+
+        if (!string.IsNullOrWhiteSpace(Comment))
+        {
+            sb.Append(" // ");
+            sb.Append(Comment);
+        }
+
+        return sb.ToString();
     }
 }

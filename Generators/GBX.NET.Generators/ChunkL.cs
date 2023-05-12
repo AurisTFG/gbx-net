@@ -6,9 +6,30 @@ namespace GBX.NET.Generators;
 class ChunkL
 {
     public required string ClassName { get; init; }
-    public required int ClassId { get; init; }
+    public required uint ClassId { get; init; }
     public required Dictionary<string, string> Metadata { get; init; } = new();
     public required List<ChunkLChunk> Chunks { get; init; } = new();
+
+    public void Save(TextWriter writer)
+    {
+        writer.Write(ClassName);
+        writer.Write(" 0x");
+        writer.WriteLine(ClassId.ToString("X8"));
+
+        foreach (var keyVal in Metadata)
+        {
+            writer.Write("- ");
+            writer.Write(keyVal.Key);
+            writer.Write(": ");
+            writer.WriteLine(keyVal.Value);
+        }
+        
+        foreach (var chunk in Chunks)
+        {
+            writer.WriteLine();
+            chunk.Save(writer, ClassId);
+        }
+    }
 
     public static ChunkL Parse(StreamReader reader)
     {
@@ -23,7 +44,7 @@ class ChunkL
 
         var className = headerMatch.Groups[1].Value;
         var classIdStr = headerMatch.Groups[2].Value;
-        var classId = int.Parse(classIdStr, NumberStyles.HexNumber);
+        var classId = uint.Parse(classIdStr, NumberStyles.HexNumber);
         var metadata = new Dictionary<string, string>();
 
         string lineStr;
@@ -157,7 +178,7 @@ class ChunkL
         return str[0] is '0' && str.Length >= 5 && str[1] is 'x' or 'X';
     }
 
-    private static string? ParseChunk(StreamReader reader, string chunkLine, int classId, int indent, out ChunkLChunk chunk)
+    private static string? ParseChunk(StreamReader reader, string chunkLine, uint classId, int indent, out ChunkLChunk chunk)
     {
         var chunkMatch = Regex.Match(chunkLine, @"^0x([0-9a-fA-F]{8}|[0-9a-fA-F]{3})(?=\s|$)\s*(\((.*)\))?\s*(\/\/(.*))?$");
 
@@ -167,7 +188,7 @@ class ChunkL
         }
 
         var chunkIdStr = chunkMatch.Groups[1].Value;
-        var chunkId = int.Parse(chunkIdStr, NumberStyles.HexNumber);
+        var chunkId = uint.Parse(chunkIdStr, NumberStyles.HexNumber);
 
         if (chunkIdStr.Length == 3)
         {
@@ -191,7 +212,7 @@ class ChunkL
         return ReadWholeIndentation(reader, chunkId, indent, chunk);
     }
 
-    private static string? ReadWholeIndentation(StreamReader reader, int chunkId, int indent, IChunkLMemberList memberList, int minVersion = 0)
+    private static string? ReadWholeIndentation(StreamReader reader, uint chunkId, int indent, IChunkLMemberList memberList, int minVersion = 0)
     {
         var lineStr = default(string);
 
@@ -234,7 +255,7 @@ class ChunkL
         return null;
     }
 
-    private static string? ParseChunkMember(StreamReader reader, string line, int chunkId, int lineIndent, int minVersion, out IChunkLMember member)
+    private static string? ParseChunkMember(StreamReader reader, string line, uint chunkId, int lineIndent, int minVersion, out IChunkLMember member)
     {
         var ifMatch = Regex.Match(line, @"^if\s(.+?)?\s*(\((.*)\))?\s*(\/\/(.*))?$");
 
@@ -269,7 +290,7 @@ class ChunkL
         return null;
     }
 
-    private static string? ParseIfStatement(StreamReader reader, string statement, int chunkId, int lineIndent, int minVersion, out ChunkLIfStatement member)
+    private static string? ParseIfStatement(StreamReader reader, string statement, uint chunkId, int lineIndent, int minVersion, out ChunkLIfStatement member)
     {
         var versionComparison = MatchVersion(statement);
 

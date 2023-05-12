@@ -10,6 +10,11 @@ class ChunkLIfStatement : IChunkLMember, IChunkLMemberList
 
     public override string ToString()
     {
+        if (Left == "version")
+        {
+            return $"if {Sign} v{Right}";
+        }
+
         return $"{Type} {Left} {Sign} {Right}";
     }
 }
