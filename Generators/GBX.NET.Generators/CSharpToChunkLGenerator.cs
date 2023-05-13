@@ -72,12 +72,14 @@ public class CSharpToChunkLGenerator : SourceGenerator
 
             try
             {
+                var members = GetFieldPropertyDictionary(engineSymbol);
+
                 var chunkL = new ChunkL
                 {
                     ClassId = classId,
                     ClassName = engineSymbol.Name,
                     Metadata = metadata,
-                    Chunks = chunks.Select(ChunkSymbolToChunkLChunk).ToList()
+                    Chunks = chunks.Select(x => ChunkSymbolToChunkLChunk(x, members)).ToList()
                 };
 
                 using var sw = new StringWriter();
@@ -87,12 +89,32 @@ public class CSharpToChunkLGenerator : SourceGenerator
             }
             catch (Exception ex)
             {
-
+                context.ReportDiagnostic(Diagnostic.Create(new DiagnosticDescriptor("GBX.NET.Generators", "ChunkL generation failed", ex.ToString(), "GBX.NET.Generators", DiagnosticSeverity.Error, true), Location.None));
             }
         }
     }
 
-    private ChunkLChunk ChunkSymbolToChunkLChunk(INamedTypeSymbol chunkSymbol)
+    private Dictionary<string, IPropertySymbol> GetFieldPropertyDictionary(INamedTypeSymbol engineSymbol)
+    {
+        var dict = new Dictionary<string, IPropertySymbol>();
+
+        foreach (var propertySymbol in engineSymbol.GetMembers().OfType<IPropertySymbol>())
+        {
+            if (propertySymbol.GetMethod?.DeclaringSyntaxReferences[0].GetSyntax() is not AccessorDeclarationSyntax accessorSyntax)
+            {
+                throw new Exception("Not AccessorDeclarationSyntax");
+            }
+
+            if (accessorSyntax.ExpressionBody is ArrowExpressionClauseSyntax arrowSyntax && arrowSyntax.Expression is IdentifierNameSyntax nameSyntax)
+            {
+                dict.Add(nameSyntax.Identifier.Text, propertySymbol);
+            }
+        }
+
+        return dict;
+    }
+
+    private ChunkLChunk ChunkSymbolToChunkLChunk(INamedTypeSymbol chunkSymbol, Dictionary<string, IPropertySymbol> classMembers)
     {
         var chunkId = default(uint?);
         var comment = "";
@@ -130,55 +152,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
 
         foreach (var statement in readWriteMethodSyntax.Body.Statements)
         {
-            if (statement is ExpressionStatementSyntax expressionStatement && expressionStatement.Expression is InvocationExpressionSyntax invocation)
-            {
-                if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
-                {
-                    var name = ((invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression as MemberAccessExpressionSyntax)?.Name as IdentifierNameSyntax)?.Identifier.Text;
-
-                    // this also doesnt work with ! expression
-
-                    /*if (name is not null && char.ToLowerInvariant(name[0]) == 'u' && int.TryParse(name.Substring(1), out _))
-                    {
-                        name = "";
-                    }*/
-
-                    switch ((memberAccess.Name as IdentifierNameSyntax)?.Identifier.Text)
-                    {
-                        case "Int32":
-                            if (name == "version")
-                            {
-                                members.Add(new ChunkLMember { Type = "version", Name = "" });
-                            }
-                            else
-                            {
-                                members.Add(new ChunkLMember { Type = "int", Name = name ?? "" });
-                            }
-                            break;
-                        case "Single":
-                            members.Add(new ChunkLMember { Type = "float", Name = name ?? "" });
-                            break;
-                        case "String":
-                            members.Add(new ChunkLMember { Type = "string", Name = name ?? "" });
-                            break;
-                        case "Id":
-                            members.Add(new ChunkLMember { Type = "id", Name = name ?? "" });
-                            break;
-                        case "Ident":
-                            members.Add(new ChunkLMember { Type = "ident", Name = name ?? "" });
-                            break;
-                        case "FileRef":
-                            members.Add(new ChunkLMember { Type = "fileref", Name = name ?? "" });
-                            break;
-                        case "Boolean":
-                            members.Add(new ChunkLMember { Type = "bool", Name = name ?? "" });
-                            break;
-                        default:
-                            members.Add(new ChunkLMember { Type = "X", Name = name ?? "" });
-                            break;
-                    }
-                }
-            }
+            members.Add(CreateMemberFromStatement(statement, classMembers));
         }
 
         return new ChunkLChunk
@@ -189,6 +163,121 @@ public class CSharpToChunkLGenerator : SourceGenerator
             Comment = comment,
             Members = members
         };
+    }
+
+    private IChunkLMember CreateMemberFromStatement(StatementSyntax statement, Dictionary<string, IPropertySymbol> classMembers)
+    {
+        if (statement is ExpressionStatementSyntax expressionStatement && expressionStatement.Expression is InvocationExpressionSyntax invocationSyntax)
+        {
+            if (invocationSyntax.Expression is MemberAccessExpressionSyntax memberSyntax && memberSyntax.Expression is IdentifierNameSyntax expectedRwNameSyntax && expectedRwNameSyntax.Identifier.Text == "rw")
+            {
+                var methodName = memberSyntax.Name.Identifier.Text;
+
+                if (methodName == "VersionInt32")
+                {
+                    return GetChunkLMemberFromMethodAndMemberName(methodName);
+                }
+
+                var args = invocationSyntax.ArgumentList.Arguments;
+
+                if (args.Count == 1)
+                {
+                    // issues with ! expression?
+
+                    var expression = args[0].Expression;
+
+                    if (expression is PostfixUnaryExpressionSyntax postfixSyntax)
+                    {
+                        expression = postfixSyntax.Operand;
+                    }
+
+                    if (expression is LiteralExpressionSyntax)
+                    {
+                        return GetChunkLMemberFromMethodAndMemberName(methodName);
+                    }
+
+                    if (expression is IdentifierNameSyntax nameSyntax) // if it is member inside chunk (not working with this.)
+                    {
+                        var chunkMemberName = nameSyntax.Identifier.Text;
+
+                        if (chunkMemberName[0] == 'U' && int.TryParse(chunkMemberName.Substring(1), out _))
+                        {
+                            return GetChunkLMemberFromMethodAndMemberName(methodName);
+                        }
+
+                        if (chunkMemberName == "version")
+                        {
+                            return GetChunkLMemberFromMethodAndMemberName(methodName, chunkMemberName);
+                        }
+                        
+                        throw new Exception("Unexpected syntax");
+                    }
+                    else if (expression is MemberAccessExpressionSyntax expectedNodeMemberSyntax && expectedNodeMemberSyntax.Expression is IdentifierNameSyntax expectedNodeSyntax && expectedNodeSyntax.Identifier.Text == "n")
+                    {
+                        if (classMembers.TryGetValue(expectedNodeMemberSyntax.Name.Identifier.Text, out var propertySymbol))
+                        {
+                            return GetChunkLMemberFromMethodAndMemberName(methodName, propertySymbol.Name);
+                        }
+
+                        throw new Exception($"Unexpected syntax ({expectedNodeMemberSyntax.Name.Identifier.Text} is not [valid] field)");
+                    }
+                    else
+                    {
+                        throw new Exception("Unexpected syntax (args[0] not 'UXX' or 'n')"); // no longer happening yay
+                    }
+                }
+                else
+                {
+                    throw new Exception("Unexpected syntax (args.Count != 1)");
+                }
+            }
+            else
+            {
+                throw new Exception("Unexpected syntax");
+            }
+        }
+        else if (statement is IfStatementSyntax ifStatement)
+        {
+            if (ifStatement.Statement is BlockSyntax blockSyntax)
+            {
+                var member = new ChunkLIfStatement { Left = "version", Sign = ">=", Right = "0" };
+
+                foreach (var blockStatement in blockSyntax.Statements)
+                {
+                    member.Members.Add(CreateMemberFromStatement(blockStatement, classMembers));
+                }
+                
+                return member;
+            }
+            else
+            {
+                throw new Exception("Unexpected syntax");
+            }
+        }
+        else
+        {
+            throw new Exception("Unexpected syntax");
+        }
+    }
+
+    private (string type, string name) GetTupleFromMethodAndMemberName(string methodName, string memberName = "")
+    {
+        return methodName switch
+        {
+            "Int32" => memberName == "version" ? ("version", "") : ("int", memberName),
+            "Single" => ("float", memberName),
+            "Boolean" => ("bool", memberName),
+            "VersionInt32" => ("version", ""),
+            "VersionByte" => ("versionbyte", ""),
+            "TimeInt32" => ("timeint", memberName),
+            _ => (methodName.ToLower(), memberName),
+        };
+    }
+
+    private ChunkLMember GetChunkLMemberFromMethodAndMemberName(string methodName, string memberName = "")
+    {
+        var (type, name) = GetTupleFromMethodAndMemberName(methodName, memberName);
+        return new ChunkLMember { Type = type, Name = name };
     }
 
     private bool IsAnyChunk(INamedTypeSymbol chunkSymbol)
