@@ -88,6 +88,11 @@ public class CSharpToChunkLGenerator : SourceGenerator
                     }
                 }
 
+                if (chunkList.Count == 0)
+                {
+                    continue;
+                }
+
                 var chunkL = new ChunkL
                 {
                     ClassId = classId,
@@ -114,15 +119,19 @@ public class CSharpToChunkLGenerator : SourceGenerator
 
         foreach (var propertySymbol in engineSymbol.GetMembers().OfType<IPropertySymbol>())
         {
-            if (propertySymbol.GetMethod?.DeclaringSyntaxReferences[0].GetSyntax() is not AccessorDeclarationSyntax accessorSyntax)
+            var syntax = propertySymbol.GetMethod?.DeclaringSyntaxReferences[0].GetSyntax();
+
+            if (syntax is not AccessorDeclarationSyntax accessorSyntax)
             {
-                throw new Exception("Not AccessorDeclarationSyntax");
+                continue;
             }
 
             if (accessorSyntax.ExpressionBody is ArrowExpressionClauseSyntax arrowSyntax && arrowSyntax.Expression is IdentifierNameSyntax nameSyntax)
             {
                 dict.Add(nameSyntax.Identifier.Text, propertySymbol);
             }
+
+            // full body cases are missing
         }
 
         return dict;
@@ -162,11 +171,13 @@ public class CSharpToChunkLGenerator : SourceGenerator
             throw new Exception("ReadWrite method not found");
         }
 
+        var chunkFieldMembers = chunkSymbol.GetMembers().OfType<IFieldSymbol>().ToDictionary(x => x.Name);
+
         var members = new List<IChunkLMember>();
 
         foreach (var statement in readWriteMethodSyntax.Body.Statements)
         {
-            members.Add(CreateMemberFromStatement(statement, classMembers));
+            members.Add(CreateMemberFromStatement(statement, classMembers, chunkFieldMembers));
         }
 
         return new ChunkLChunk
@@ -179,7 +190,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
         };
     }
 
-    private IChunkLMember CreateMemberFromStatement(StatementSyntax statement, Dictionary<string, IPropertySymbol> classMembers)
+    private IChunkLMember CreateMemberFromStatement(StatementSyntax statement, Dictionary<string, IPropertySymbol> classMembers, Dictionary<string, IFieldSymbol> chunkFieldMembers)
     {
         if (statement is ExpressionStatementSyntax expressionStatement && expressionStatement.Expression is InvocationExpressionSyntax invocationSyntax)
         {
@@ -189,7 +200,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
 
                 if (methodName == "VersionInt32")
                 {
-                    return GetChunkLMemberFromMethodAndMemberName(methodName);
+                    return GetChunkLMemberFromMethodAndMemberName(methodName, nullable: false);
                 }
 
                 var args = invocationSyntax.ArgumentList.Arguments;
@@ -207,7 +218,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
 
                     if (expression is LiteralExpressionSyntax)
                     {
-                        return GetChunkLMemberFromMethodAndMemberName(methodName);
+                        return GetChunkLMemberFromMethodAndMemberName(methodName, nullable: false);
                     }
 
                     if (expression is IdentifierNameSyntax nameSyntax) // if it is member inside chunk (not working with this.)
@@ -216,12 +227,26 @@ public class CSharpToChunkLGenerator : SourceGenerator
 
                         if (chunkMemberName[0] == 'U' && int.TryParse(chunkMemberName.Substring(1), out _))
                         {
-                            return GetChunkLMemberFromMethodAndMemberName(methodName);
+                            var nodeType = "";
+                            var nullable = false;
+
+                            if (chunkFieldMembers.TryGetValue(chunkMemberName, out var field))
+                            {
+                                if (methodName == "NodeRef")
+                                {
+                                    nodeType = (field.Type.Name is "Node" or "CMwNod" ? "node" : field.Type.Name);
+                                }
+
+                                nullable = field.NullableAnnotation == NullableAnnotation.Annotated;
+                            }
+
+
+                            return GetChunkLMemberFromMethodAndMemberName(methodName, nullable, nodeType: nodeType);
                         }
 
                         if (chunkMemberName == "version")
                         {
-                            return GetChunkLMemberFromMethodAndMemberName(methodName, chunkMemberName);
+                            return GetChunkLMemberFromMethodAndMemberName(methodName, nullable: false, chunkMemberName);
                         }
                         
                         throw new Exception("Unexpected syntax");
@@ -230,7 +255,14 @@ public class CSharpToChunkLGenerator : SourceGenerator
                     {
                         if (classMembers.TryGetValue(expectedNodeMemberSyntax.Name.Identifier.Text, out var propertySymbol))
                         {
-                            return GetChunkLMemberFromMethodAndMemberName(methodName, propertySymbol.Name);
+                            var nodeType = "";
+
+                            if (methodName == "NodeRef")
+                            {
+                                nodeType = (propertySymbol.Type.Name is "Node" or "CMwNod" ? "node" : propertySymbol.Type.Name);
+                            }
+
+                            return GetChunkLMemberFromMethodAndMemberName(methodName, propertySymbol.NullableAnnotation == NullableAnnotation.Annotated, propertySymbol.Name, nodeType);
                         }
 
                         throw new Exception($"Unexpected syntax ({expectedNodeMemberSyntax.Name.Identifier.Text} is not [valid] field)");
@@ -252,123 +284,146 @@ public class CSharpToChunkLGenerator : SourceGenerator
         }
         else if (statement is IfStatementSyntax ifStatement)
         {
-            if (ifStatement.Statement is BlockSyntax blockSyntax)
+            string left;
+            string sign;
+            string right;
+
+            switch (ifStatement.Condition)
             {
-                string left;
-                string sign;
-                string right;
-
-                switch (ifStatement.Condition)
-                {
-                    case IsPatternExpressionSyntax isSyntax:
-                        if (isSyntax.Expression is IdentifierNameSyntax nameSyntax && isSyntax.Pattern is ConstantPatternSyntax constantSyntax && constantSyntax.Expression is LiteralExpressionSyntax literalSyntax)
-                        {
-                            left = nameSyntax.Identifier.Text;
-                            sign = "is";
-                            right = literalSyntax.Token.Text;
-                        }
-                        else
-                        {
-                            throw new Exception("Unexpected if statement syntax");
-                        }
-                        break;
-                    case BinaryExpressionSyntax binarySyntax:
-                        if (binarySyntax.Left is IdentifierNameSyntax leftIdentSyntax)
-                        {
-                            left = leftIdentSyntax.Identifier.Text;
-                        }
-                        else if (binarySyntax.Left is MemberAccessExpressionSyntax leftMemberSyntax && leftMemberSyntax.Expression is IdentifierNameSyntax leftMemberIdentSyntax && leftMemberIdentSyntax.Identifier.Text == "n" && classMembers.TryGetValue(leftMemberSyntax.Name.Identifier.Text, out var propertySymbolLeft))
-                        {
-                            left = propertySymbolLeft.Name;
-                        }
-                        else
-                        {
-                            throw new Exception("Unexpected syntax");
-                        }
+                case IsPatternExpressionSyntax isSyntax:
+                    if (isSyntax.Expression is IdentifierNameSyntax nameSyntax && isSyntax.Pattern is ConstantPatternSyntax constantSyntax && constantSyntax.Expression is LiteralExpressionSyntax literalSyntax)
+                    {
+                        left = nameSyntax.Identifier.Text == "Version" ? "version" : nameSyntax.Identifier.Text;
+                        sign = "is";
+                        right = literalSyntax.Token.Text;
+                    }
+                    else
+                    {
+                        throw new Exception("Unexpected if statement syntax");
+                    }
+                    break;
+                case BinaryExpressionSyntax binarySyntax:
+                    if (binarySyntax.Left is IdentifierNameSyntax leftIdentSyntax)
+                    {
+                        left = leftIdentSyntax.Identifier.Text == "Version" ? "version" : leftIdentSyntax.Identifier.Text;
+                    }
+                    else if (binarySyntax.Left is MemberAccessExpressionSyntax leftMemberSyntax && leftMemberSyntax.Expression is IdentifierNameSyntax leftMemberIdentSyntax && leftMemberIdentSyntax.Identifier.Text == "n" && classMembers.TryGetValue(leftMemberSyntax.Name.Identifier.Text, out var propertySymbolLeft))
+                    {
+                        left = propertySymbolLeft.Name;
+                    }
+                    else
+                    {
+                        throw new Exception("Unexpected syntax");
+                    }
                         
-                        sign = binarySyntax.OperatorToken.Text == "==" ? "=" : binarySyntax.OperatorToken.Text;
+                    sign = binarySyntax.OperatorToken.Text == "==" ? "=" : binarySyntax.OperatorToken.Text;
 
-                        if (binarySyntax.Right is IdentifierNameSyntax rightIdentSyntax)
-                        {
-                            right = rightIdentSyntax.Identifier.Text;
-                        }
-                        else if (binarySyntax.Right is LiteralExpressionSyntax rightLiteralSyntax)
-                        {
-                            right = rightLiteralSyntax.Token.Text;
-                        }
-                        else
-                        {
-                            throw new Exception("Unexpected syntax");
-                        }
-                        break;
-                    case IdentifierNameSyntax identifierSyntax:
-                        left = identifierSyntax.Identifier.Text;
+                    if (binarySyntax.Right is IdentifierNameSyntax rightIdentSyntax)
+                    {
+                        right = rightIdentSyntax.Identifier.Text;
+                    }
+                    else if (binarySyntax.Right is LiteralExpressionSyntax rightLiteralSyntax)
+                    {
+                        right = rightLiteralSyntax.Token.Text;
+                    }
+                    else
+                    {
+                        throw new Exception("Unexpected syntax");
+                    }
+                    break;
+                case IdentifierNameSyntax identifierSyntax:
+                    left = identifierSyntax.Identifier.Text;
+                    sign = "=";
+                    right = "true";
+                    break;
+                case MemberAccessExpressionSyntax memberSyntax:
+                    if (memberSyntax.Expression is IdentifierNameSyntax memberIdentSyntax && memberIdentSyntax.Identifier.Text == "n" && classMembers.TryGetValue(memberSyntax.Name.Identifier.Text, out var propertySymbol))
+                    {
+                        left = propertySymbol.Name;
                         sign = "=";
                         right = "true";
-                        break;
-                    case MemberAccessExpressionSyntax memberSyntax:
-                        if (memberSyntax.Expression is IdentifierNameSyntax memberIdentSyntax && memberIdentSyntax.Identifier.Text == "n" && classMembers.TryGetValue(memberSyntax.Name.Identifier.Text, out var propertySymbol))
-                        {
-                            left = propertySymbol.Name;
-                            sign = "=";
-                            right = "true";
-                        }
-                        else
-                        {
-                            throw new Exception("Unexpected if statement syntax");
-                        }
-                        break;
-                    case PrefixUnaryExpressionSyntax prefixSyntax:
-                        if (prefixSyntax.OperatorToken.Text == "!")
-                        {
-                            if(prefixSyntax.Operand is IdentifierNameSyntax identSyntax)
-                            {
-                                left = identSyntax.Identifier.Text;
-                                sign = "=";
-                                right = "false";
-                                
-                            }
-                            else if (prefixSyntax.Operand is MemberAccessExpressionSyntax prefixMemberSyntax && prefixMemberSyntax.Expression is IdentifierNameSyntax prefixMemberIdentSyntax && prefixMemberIdentSyntax.Identifier.Text == "n" && classMembers.TryGetValue(prefixMemberSyntax.Name.Identifier.Text, out var propertySymbolPrefix))
-                            {
-                                left = propertySymbolPrefix.Name;
-                                sign = "=";
-                                right = "false";
-                            }
-                            else
-                            {
-                                throw new Exception("Unexpected if statement syntax");
-                            }
-                        }
-                        else
-                        {
-                            throw new Exception("Unexpected if statement syntax");
-                        }
-                        break;
-                    default:
+                    }
+                    else
+                    {
                         throw new Exception("Unexpected if statement syntax");
-                }
+                    }
+                    break;
+                case PrefixUnaryExpressionSyntax prefixSyntax:
+                    if (prefixSyntax.OperatorToken.Text == "!")
+                    {
+                        if(prefixSyntax.Operand is IdentifierNameSyntax identSyntax)
+                        {
+                            left = identSyntax.Identifier.Text;
+                            sign = "=";
+                            right = "false";
+                                
+                        }
+                        else if (prefixSyntax.Operand is MemberAccessExpressionSyntax prefixMemberSyntax && prefixMemberSyntax.Expression is IdentifierNameSyntax prefixMemberIdentSyntax && prefixMemberIdentSyntax.Identifier.Text == "n" && classMembers.TryGetValue(prefixMemberSyntax.Name.Identifier.Text, out var propertySymbolPrefix))
+                        {
+                            left = propertySymbolPrefix.Name;
+                            sign = "=";
+                            right = "false";
+                        }
+                        else
+                        {
+                            throw new Exception("Unexpected if statement syntax");
+                        }
+                    }
+                    else
+                    {
+                        throw new Exception("Unexpected if statement syntax");
+                    }
+                    break;
+                default:
+                    throw new Exception("Unexpected if statement syntax");
+            }
 
-                var member = new ChunkLIfStatement { Left = left, Sign = sign, Right = right };
+            var member = new ChunkLIfStatement { Left = left, Sign = sign, Right = right };
 
+            if (ifStatement.Statement is BlockSyntax blockSyntax)
+            {
                 foreach (var blockStatement in blockSyntax.Statements)
                 {
-                    member.Members.Add(CreateMemberFromStatement(blockStatement, classMembers));
+                    member.Members.Add(CreateMemberFromStatement(blockStatement, classMembers, chunkFieldMembers));
                 }
-                
-                return member;
             }
             else
             {
-                throw new Exception("Unexpected syntax");
+                member.Members.Add(CreateMemberFromStatement(ifStatement.Statement, classMembers, chunkFieldMembers));
             }
+
+            if (ifStatement.Else is not null)
+            {
+                if (ifStatement.Else.Statement is BlockSyntax b)
+                {
+                    foreach (var blockStatement in b.Statements)
+                    {
+                        member.Else.Add(CreateMemberFromStatement(blockStatement, classMembers, chunkFieldMembers));
+                    }
+                }
+                else
+                {
+                    member.Else.Add(CreateMemberFromStatement(ifStatement.Else.Statement, classMembers, chunkFieldMembers));
+                }
+            }
+
+            return member;
+        }
+        else if (statement is ReturnStatementSyntax)
+        {
+            return new ChunkLMember { Type = "return", Name = "" };
+        }
+        else if (statement is ThrowStatementSyntax)
+        {
+            return new ChunkLMember { Type = "throw", Name = "" };
         }
         else
         {
-            throw new Exception("Unexpected syntax");
+            return new ChunkLMember { Type = "", Name = "", Comment = statement.ToString() };
         }
     }
 
-    private (string type, string name) GetTupleFromMethodAndMemberName(string methodName, string memberName = "")
+    private (string type, string name) GetTupleFromMethodAndMemberName(string methodName, string memberName, string nodeType)
     {
         return methodName switch
         {
@@ -378,14 +433,16 @@ public class CSharpToChunkLGenerator : SourceGenerator
             "VersionInt32" => ("version", ""),
             "VersionByte" => ("versionbyte", ""),
             "TimeInt32" => ("timeint", memberName),
+            "ArrayId" => ("id[]", memberName),
+            "NodeRef" => (nodeType, memberName),
             _ => (methodName.ToLower(), memberName),
         };
     }
 
-    private ChunkLMember GetChunkLMemberFromMethodAndMemberName(string methodName, string memberName = "")
+    private ChunkLMember GetChunkLMemberFromMethodAndMemberName(string methodName, bool nullable, string memberName = "", string nodeType = "")
     {
-        var (type, name) = GetTupleFromMethodAndMemberName(methodName, memberName);
-        return new ChunkLMember { Type = type, Name = name };
+        var (type, name) = GetTupleFromMethodAndMemberName(methodName, memberName, nodeType);
+        return new ChunkLMember { Type = type + (nullable ? "?" : ""), Name = name };
     }
 
     private bool IsAnyChunk(INamedTypeSymbol chunkSymbol)

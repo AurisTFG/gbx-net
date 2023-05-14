@@ -70,7 +70,24 @@ class ChunkLChunk : IChunkLMemberList
             case ChunkLIfStatement ifStatement:
                 writer.WriteLine(ifStatement.ToString());
 
-                foreach(var m in ifStatement.Members)
+                foreach (var m in ifStatement.Members)
+                {
+                    WriteMember(m, writer, indent + 1);
+                }
+
+                if (ifStatement.Else.Count <= 0)
+                {
+                    break;
+                }
+                
+                for (var i = 0; i < indent; i++)
+                {
+                    writer.Write(' ');
+                }
+
+                writer.WriteLine("else");
+
+                foreach (var m in ifStatement.Else)
                 {
                     WriteMember(m, writer, indent + 1);
                 }
