@@ -117,6 +117,7 @@ class ChunkLChunkBuilder
                         case "int" or "int32": AppendMember(sbRWIndent, member, "int", "Int32"); break;
                         case "float" or "single": AppendMember(sbRWIndent, member, "float", "Single"); break;
                         case "fileref": AppendMember(sbRWIndent, member, "FileRef"); break;
+                        case "string" or "str": AppendMember(sbRWIndent, member, "String"); break;
                         case "throw":
                             if (member.Name is "v" or "version")
                             {
@@ -149,6 +150,15 @@ class ChunkLChunkBuilder
                     sbReadWrite.AppendLine(sbRWIndent, "{");
                     AppendChunkMembers(sbRWIndent + 1, ifStatement);
                     sbReadWrite.AppendLine(sbRWIndent, "}");
+
+                    if (ifStatement.Else is not null)
+                    {
+                        sbReadWrite.AppendLine(sbRWIndent, "else");
+                        sbReadWrite.AppendLine(sbRWIndent, "{");
+                        AppendChunkMembers(sbRWIndent + 1, ifStatement.Else);
+                        sbReadWrite.AppendLine(sbRWIndent, "}");
+                    }
+
                     break;
             }
         }
@@ -229,6 +239,8 @@ class ChunkLChunkBuilder
             sbClass.Append(lowerFirstCaseName);
             sbClass.AppendLine(" = value; }");
             sbClass.AppendLine();
+
+            classBuilder.ExistingPropertySymbols.Add(member.Name, null); // null means it exists but no symbol is tracked
         }
 
         sbReadWrite.Append(sbRWIndent, $"rw.{rwName ?? type}(ref n.{lowerFirstCaseName}");

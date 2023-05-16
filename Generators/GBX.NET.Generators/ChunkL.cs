@@ -262,7 +262,20 @@ class ChunkL
         if (ifMatch.Success)
         {
             var l = ParseIfStatement(reader, ifMatch.Groups[1].Value, chunkId, lineIndent, minVersion, out var ifStatement);
+
             member = ifStatement;
+
+            if (l is not null)
+            {
+                var elseMatch = Regex.Match(l.Trim(), @"^else\s*(\/\/(.*))?$");
+
+                if (elseMatch.Success)
+                {
+                    ifStatement.Else = new();
+                    return ReadWholeIndentation(reader, chunkId, lineIndent, ifStatement.Else, minVersion);
+                }
+            }
+
             return l;
         }
 

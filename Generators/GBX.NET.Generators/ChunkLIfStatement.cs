@@ -7,7 +7,7 @@ class ChunkLIfStatement : IChunkLMember, IChunkLMemberList
     public required string Sign { get; init; }
     public required string Right { get; init; }
     public List<IChunkLMember> Members { get; init; } = new();
-    public List<IChunkLMember> Else { get; init; } = new();
+    public ChunkLElseStatement? Else { get; internal set; }
 
     public override string ToString()
     {

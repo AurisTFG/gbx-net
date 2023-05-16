@@ -10,7 +10,7 @@ class ChunkLClassBuilder
     
     public ChunkL ChunkL { get; }
     public INamedTypeSymbol? ExistingTypeSymbol { get; }
-    public Dictionary<string, IPropertySymbol> ExistingPropertySymbols { get; } = new();
+    public Dictionary<string, IPropertySymbol?> ExistingPropertySymbols { get; } = new();
 
     public StringBuilder SbClass { get; } = new();
     public StringBuilder SbChunks { get; } = new();

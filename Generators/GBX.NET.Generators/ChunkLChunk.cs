@@ -75,7 +75,7 @@ class ChunkLChunk : IChunkLMemberList
                     WriteMember(m, writer, indent + 1);
                 }
 
-                if (ifStatement.Else.Count <= 0)
+                if (ifStatement.Else is null)
                 {
                     break;
                 }
@@ -87,7 +87,7 @@ class ChunkLChunk : IChunkLMemberList
 
                 writer.WriteLine("else");
 
-                foreach (var m in ifStatement.Else)
+                foreach (var m in ifStatement.Else.Members)
                 {
                     WriteMember(m, writer, indent + 1);
                 }

@@ -394,16 +394,18 @@ public class CSharpToChunkLGenerator : SourceGenerator
 
             if (ifStatement.Else is not null)
             {
+                member.Else = new();
+
                 if (ifStatement.Else.Statement is BlockSyntax b)
                 {
                     foreach (var blockStatement in b.Statements)
                     {
-                        member.Else.Add(CreateMemberFromStatement(blockStatement, classMembers, chunkFieldMembers));
+                        member.Else.Members.Add(CreateMemberFromStatement(blockStatement, classMembers, chunkFieldMembers));
                     }
                 }
                 else
                 {
-                    member.Else.Add(CreateMemberFromStatement(ifStatement.Else.Statement, classMembers, chunkFieldMembers));
+                    member.Else.Members.Add(CreateMemberFromStatement(ifStatement.Else.Statement, classMembers, chunkFieldMembers));
                 }
             }
 
