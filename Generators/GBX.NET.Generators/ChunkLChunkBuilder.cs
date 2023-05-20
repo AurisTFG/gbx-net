@@ -119,7 +119,7 @@ class ChunkLChunkBuilder
                         case "fileref": AppendMember(sbRWIndent, member, "FileRef"); break;
                         case "string" or "str": AppendMember(sbRWIndent, member, "String"); break;
                         case "throw":
-                            if (member.Name is "v" or "version")
+                            if (member.Name is "v" or "version" or "Version")
                             {
                                 sbReadWrite.AppendLine(sbRWIndent, $"throw new VersionNotSupportedException(Version);");
                             }

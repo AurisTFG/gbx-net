@@ -17,6 +17,7 @@ class ChunkLMember : IChunkLMember
     public string? DefaultValue { get; init; }
     public bool Nullable { get; init; }
     public int MinVersion { get; init; }
+    public bool External { get; init; }
 
     public override string ToString()
     {
@@ -34,19 +35,20 @@ class ChunkLMember : IChunkLMember
             sb.Append(Name);
         }
 
-        if (ExactlyNamed || ExactName is not null || DefaultValue is not null)
+        if (ExactlyNamed || ExactName is not null || DefaultValue is not null || External)
         {
             sb.Append(" (");
 
             var pairs = new (string, string?)[]
             {
                 ("exact", ExactlyNamed ? "" : ExactName),
-                ("default", DefaultValue)
+                ("default", DefaultValue),
+                ("ext", External ? "" : null)
             };
 
             sb.Append(string.Join(", ", pairs.Where(x => x.Item2 is not null).Select(x =>
             {
-                if (x.Item1 == "exact" && x.Item2 == "")
+                if (x.Item1 is "exact" or "ext" && x.Item2 == "")
                 {
                     return x.Item1;
                 }

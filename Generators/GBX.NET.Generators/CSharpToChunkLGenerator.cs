@@ -84,6 +84,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
                     }
                     catch (Exception ex)
                     {
+                        metadata.Add($"chunk_{c.Name}", ex.Message);
                         context.ReportDiagnostic(Diagnostic.Create(new DiagnosticDescriptor("GBX.NET.Generators", "ChunkL (specific chunk) generation failed", ex.ToString(), "GBX.NET.Generators", DiagnosticSeverity.Error, true), Location.None));
                     }
                 }
@@ -126,12 +127,24 @@ public class CSharpToChunkLGenerator : SourceGenerator
                 continue;
             }
 
-            if (accessorSyntax.ExpressionBody is ArrowExpressionClauseSyntax arrowSyntax && arrowSyntax.Expression is IdentifierNameSyntax nameSyntax)
+            if (accessorSyntax.ExpressionBody is ArrowExpressionClauseSyntax arrowSyntax)
             {
-                dict.Add(nameSyntax.Identifier.Text, propertySymbol);
+                if (arrowSyntax.Expression is IdentifierNameSyntax nameSyntax)
+                {
+                    dict.Add(nameSyntax.Identifier.Text, propertySymbol);
+                }
+                else if (arrowSyntax.Expression is AssignmentExpressionSyntax assignmentExpressionSyntax && assignmentExpressionSyntax.Left is IdentifierNameSyntax identifierName)
+                {
+                    dict.Add(identifierName.Identifier.Text, propertySymbol);
+                }
             }
-
-            // full body cases are missing
+            else if (accessorSyntax.Body is BlockSyntax blockSyntax)
+            {                
+                if (blockSyntax.Statements.Last() is ReturnStatementSyntax returnStatement && returnStatement.Expression is IdentifierNameSyntax identSyntax)
+                {
+                    dict.Add(identSyntax.Identifier.Text, propertySymbol);
+                }
+            }
         }
 
         return dict;
@@ -234,7 +247,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
                             {
                                 if (methodName == "NodeRef")
                                 {
-                                    nodeType = (field.Type.Name is "Node" or "CMwNod" ? "node" : field.Type.Name);
+                                    nodeType = field.Type.Name is "Node" or "CMwNod" ? "node" : field.Type.Name;
                                 }
 
                                 nullable = field.NullableAnnotation == NullableAnnotation.Annotated;
@@ -249,7 +262,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
                             return GetChunkLMemberFromMethodAndMemberName(methodName, nullable: false, chunkMemberName);
                         }
                         
-                        throw new Exception("Unexpected syntax");
+                        throw new Exception($"Unexpected syntax ({chunkMemberName})");
                     }
                     else if (expression is MemberAccessExpressionSyntax expectedNodeMemberSyntax && expectedNodeMemberSyntax.Expression is IdentifierNameSyntax expectedNodeSyntax && expectedNodeSyntax.Identifier.Text == "n")
                     {
@@ -269,12 +282,30 @@ public class CSharpToChunkLGenerator : SourceGenerator
                     }
                     else
                     {
-                        throw new Exception("Unexpected syntax (args[0] not 'UXX' or 'n')");
+                        throw new Exception($"Unexpected syntax (args[0] not 'UXX' or 'n')");
                     }
+                }
+                else if (args.Count == 2)
+                {
+                    var expression = args[0].Expression;
+                    
+                    if (methodName == "NodeRef" && expression is MemberAccessExpressionSyntax expectedNodeMemberSyntax && expectedNodeMemberSyntax.Expression is IdentifierNameSyntax expectedNodeSyntax && expectedNodeSyntax.Identifier.Text == "n")
+                    {
+                        if (classMembers.TryGetValue(expectedNodeMemberSyntax.Name.Identifier.Text, out var propertySymbol))
+                        {
+                            var nodeType = propertySymbol.Type.Name is "Node" or "CMwNod" ? "node" : propertySymbol.Type.Name;
+
+                            return new ChunkLMember { Type = nodeType + (propertySymbol.NullableAnnotation == NullableAnnotation.Annotated ? "?" : ""), Name = propertySymbol.Name, External = true };
+                        }
+
+                        throw new Exception($"Unexpected syntax ({expectedNodeMemberSyntax.Name.Identifier.Text} is not [valid] field)");
+                    }
+
+                    throw new Exception("Unexpected syntax");
                 }
                 else
                 {
-                    throw new Exception("Unexpected syntax (args.Count != 1)");
+                    throw new Exception("Unexpected syntax (args.Count != 1 or 2)");
                 }
             }
             else

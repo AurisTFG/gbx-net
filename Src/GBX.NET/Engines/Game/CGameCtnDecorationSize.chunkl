@@ -1,0 +1,21 @@
+CGameCtnDecorationSize 0x0303B000
+
+0x000
+ vec2 EditionZoneMin
+ vec2 EditionZoneMax
+ float
+
+0x001
+ int BaseHeightBase
+ int3 Size
+ CSceneLayout? Scene (ext)
+
+0x002
+ int BaseHeightBase // problem with AppliedWithChunk not caring about more than one chunk
+ int3 Size
+ bool OffsetBlockY
+ CSceneLayout? Scene (ext) // external node not applied
+
+0x003 (skippable)
+ version
+ int BaseHeightOffset // property not decorated with DiscoverChunk
