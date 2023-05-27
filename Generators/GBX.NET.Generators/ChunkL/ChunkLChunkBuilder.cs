@@ -1,14 +1,14 @@
 ﻿using GBX.NET.Generators.Extensions;
 using System.Text;
 
-namespace GBX.NET.Generators;
+namespace GBX.NET.Generators.ChunkL;
 
 class ChunkLChunkBuilder
 {
     private readonly ChunkLClassBuilder classBuilder;
     private readonly ChunkLChunk chunk;
     private readonly List<ChunkLMember> usedChunkMembers = new();
-    
+
     private readonly StringBuilder sbClass;
     private readonly StringBuilder sbChunks;
     private readonly StringBuilder sbReadWrite = new();
@@ -64,7 +64,7 @@ class ChunkLChunkBuilder
             sbChunks.Append(sbReadWrite.ToString());
             sbChunks.AppendLine(2, "}");
         }
-        
+
         sbChunks.AppendLine(1, "}");
 
         sbChunks.AppendLine();
@@ -98,7 +98,7 @@ class ChunkLChunkBuilder
                                 sbChunks.AppendLine(member.Comment);
                                 sbChunks.AppendLine(2, "/// </summary>");
                             }
-                            
+
                             sbChunks.Append(2, "public int Version { get; set; }");
 
                             if (!string.IsNullOrWhiteSpace(member.DefaultValue))
@@ -173,14 +173,14 @@ class ChunkLChunkBuilder
             sbReadWrite.AppendLine(sbRWIndent, $"rw.{rwName ?? type}(ref U{unknownMemberCounter:00});");
             return;
         }
-        
+
         var lowerFirstCaseName = char.ToLowerInvariant(member.Name[0]) + member.Name.Substring(1);
 
         if (!classBuilder.ExistingPropertySymbols.ContainsKey(member.Name))
         {
             sbClass.Append(1, "private ");
             sbClass.Append(type);
-            
+
             if (member.Nullable)
             {
                 sbClass.Append('?');
@@ -197,7 +197,7 @@ class ChunkLChunkBuilder
                 sbClass.AppendLine(member.Comment);
                 sbClass.AppendLine(1, "/// </summary>");
             }
-            
+
             sbClass.Append(1, $"[NodeMember(");
 
             if (member.ExactlyNamed)
@@ -210,27 +210,27 @@ class ChunkLChunkBuilder
             }
 
             sbClass.AppendLine(")]");
-            
+
             sbClass.Append(1, "[AppliedWithChunk<Chunk");
             sbClass.Append(chunk.ChunkId.ToString("X8"));
             sbClass.Append(">(");
-            
+
             if (member.MinVersion > 0)
             {
                 sbClass.Append("sinceVersion: ");
                 sbClass.Append(member.MinVersion);
             }
-            
+
             sbClass.AppendLine(")]");
 
             sbClass.Append(1, "public ");
             sbClass.Append(type);
-            
+
             if (member.Nullable)
             {
                 sbClass.Append('?');
             }
-            
+
             sbClass.Append(" ");
             sbClass.Append(member.Name);
             sbClass.Append(" { get => ");

@@ -1,7 +1,7 @@
 ﻿using GBX.NET.Generators.Extensions;
 using Microsoft.CodeAnalysis;
 
-namespace GBX.NET.Generators;
+namespace GBX.NET.Generators.ChunkL;
 
 [Generator]
 public class ChunkLToCSharpGenerator : SourceGenerator

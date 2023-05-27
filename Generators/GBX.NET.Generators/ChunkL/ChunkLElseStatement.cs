@@ -1,4 +1,4 @@
-﻿namespace GBX.NET.Generators;
+﻿namespace GBX.NET.Generators.ChunkL;
 
 class ChunkLElseStatement : IChunkLMember, IChunkLMemberList
 {

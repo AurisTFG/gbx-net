@@ -2,12 +2,12 @@
 using Microsoft.CodeAnalysis;
 using System.Text;
 
-namespace GBX.NET.Generators;
+namespace GBX.NET.Generators.ChunkL;
 
 class ChunkLClassBuilder
 {
     private readonly string ns;
-    
+
     public ChunkL ChunkL { get; }
     public INamedTypeSymbol? ExistingTypeSymbol { get; }
     public Dictionary<string, IPropertySymbol?> ExistingPropertySymbols { get; } = new();
@@ -18,7 +18,7 @@ class ChunkLClassBuilder
     public ChunkLClassBuilder(string ns, ChunkL chunkL, INamedTypeSymbol? existingTypeSymbol)
     {
         this.ns = ns;
-        
+
         ChunkL = chunkL;
         ExistingTypeSymbol = existingTypeSymbol;
 

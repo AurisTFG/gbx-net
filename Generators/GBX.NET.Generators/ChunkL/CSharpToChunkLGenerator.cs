@@ -2,7 +2,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace GBX.NET.Generators;
+namespace GBX.NET.Generators.ChunkL;
 
 [Generator]
 public class CSharpToChunkLGenerator : SourceGenerator
@@ -41,7 +41,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
             var engineSymbol = engineTypeSymbolPair.Value;
 
             var relatedDir = Path.Combine(chunkLDir, engineSymbol.ContainingNamespace.Name);
-            
+
             Directory.CreateDirectory(relatedDir);
 
             var chunkLPath = Path.Combine(relatedDir, $"{engineSymbol.Name}.chunkl");
@@ -76,7 +76,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
 
                 var chunkList = new List<ChunkLChunk>();
 
-                foreach(var c in chunks)
+                foreach (var c in chunks)
                 {
                     try
                     {
@@ -139,7 +139,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
                 }
             }
             else if (accessorSyntax.Body is BlockSyntax blockSyntax)
-            {                
+            {
                 if (blockSyntax.Statements.Last() is ReturnStatementSyntax returnStatement && returnStatement.Expression is IdentifierNameSyntax identSyntax)
                 {
                     dict.Add(identSyntax.Identifier.Text, propertySymbol);
@@ -175,20 +175,25 @@ public class CSharpToChunkLGenerator : SourceGenerator
             throw new Exception("Invalid chunk ID");
         }
 
-        var readWriteMethod = chunkSymbol.GetMembers().OfType<IMethodSymbol>().FirstOrDefault(x => x.Name == "ReadWrite");
+        var readWriteMethodSyntax = default(MethodDeclarationSyntax);
+        var chunkFieldMembers = new Dictionary<string, IFieldSymbol>();
 
-        var readWriteMethodSyntax = readWriteMethod?.DeclaringSyntaxReferences[0].GetSyntax() as MethodDeclarationSyntax;
-
-        if (readWriteMethodSyntax?.Body is null)
+        foreach (var chunkMember in chunkSymbol.GetMembers())
         {
-            throw new Exception("ReadWrite method not found");
+            switch (chunkMember)
+            {
+                case IMethodSymbol { Name: "ReadWrite" } readWriteMethod:
+                    readWriteMethodSyntax = readWriteMethod.DeclaringSyntaxReferences[0].GetSyntax() as MethodDeclarationSyntax;
+                    break;
+                case IFieldSymbol field:
+                    chunkFieldMembers.Add(field.Name, field);
+                    break;
+            }
         }
-
-        var chunkFieldMembers = chunkSymbol.GetMembers().OfType<IFieldSymbol>().ToDictionary(x => x.Name);
 
         var members = new List<IChunkLMember>();
 
-        foreach (var statement in readWriteMethodSyntax.Body.Statements)
+        foreach (var statement in readWriteMethodSyntax?.Body?.Statements ?? Enumerable.Empty<StatementSyntax>())
         {
             members.Add(CreateMemberFromStatement(statement, classMembers, chunkFieldMembers));
         }
@@ -261,7 +266,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
                         {
                             return GetChunkLMemberFromMethodAndMemberName(methodName, nullable: false, chunkMemberName);
                         }
-                        
+
                         throw new Exception($"Unexpected syntax ({chunkMemberName})");
                     }
                     else if (expression is MemberAccessExpressionSyntax expectedNodeMemberSyntax && expectedNodeMemberSyntax.Expression is IdentifierNameSyntax expectedNodeSyntax && expectedNodeSyntax.Identifier.Text == "n")
@@ -272,7 +277,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
 
                             if (methodName == "NodeRef")
                             {
-                                nodeType = (propertySymbol.Type.Name is "Node" or "CMwNod" ? "node" : propertySymbol.Type.Name);
+                                nodeType = propertySymbol.Type.Name is "Node" or "CMwNod" ? "node" : propertySymbol.Type.Name;
                             }
 
                             return GetChunkLMemberFromMethodAndMemberName(methodName, propertySymbol.NullableAnnotation == NullableAnnotation.Annotated, propertySymbol.Name, nodeType);
@@ -288,7 +293,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
                 else if (args.Count == 2)
                 {
                     var expression = args[0].Expression;
-                    
+
                     if (methodName == "NodeRef" && expression is MemberAccessExpressionSyntax expectedNodeMemberSyntax && expectedNodeMemberSyntax.Expression is IdentifierNameSyntax expectedNodeSyntax && expectedNodeSyntax.Identifier.Text == "n")
                     {
                         if (classMembers.TryGetValue(expectedNodeMemberSyntax.Name.Identifier.Text, out var propertySymbol))
@@ -346,7 +351,7 @@ public class CSharpToChunkLGenerator : SourceGenerator
                     {
                         throw new Exception("Unexpected syntax");
                     }
-                        
+
                     sign = binarySyntax.OperatorToken.Text == "==" ? "=" : binarySyntax.OperatorToken.Text;
 
                     if (binarySyntax.Right is IdentifierNameSyntax rightIdentSyntax)
@@ -382,12 +387,12 @@ public class CSharpToChunkLGenerator : SourceGenerator
                 case PrefixUnaryExpressionSyntax prefixSyntax:
                     if (prefixSyntax.OperatorToken.Text == "!")
                     {
-                        if(prefixSyntax.Operand is IdentifierNameSyntax identSyntax)
+                        if (prefixSyntax.Operand is IdentifierNameSyntax identSyntax)
                         {
                             left = identSyntax.Identifier.Text;
                             sign = "=";
                             right = "false";
-                                
+
                         }
                         else if (prefixSyntax.Operand is MemberAccessExpressionSyntax prefixMemberSyntax && prefixMemberSyntax.Expression is IdentifierNameSyntax prefixMemberIdentSyntax && prefixMemberIdentSyntax.Identifier.Text == "n" && classMembers.TryGetValue(prefixMemberSyntax.Name.Identifier.Text, out var propertySymbolPrefix))
                         {
