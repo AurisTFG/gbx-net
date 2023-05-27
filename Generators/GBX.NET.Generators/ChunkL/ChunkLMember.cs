@@ -67,4 +67,9 @@ class ChunkLMember : IChunkLMember
 
         return sb.ToString();
     }
+
+    public static ChunkLMember OnlyComment(string comment)
+    {
+        return new ChunkLMember { Name = "", Type = "", Comment = comment };
+    }
 }
