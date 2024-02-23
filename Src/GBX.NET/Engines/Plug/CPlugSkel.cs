@@ -120,6 +120,13 @@ public class CPlugSkel : CMwNod
                             {
                                 rw.Byte(ref U07);
                                 rw.Int32(ref U08);
+
+                                if (version >= 19)
+                                {
+                                    rw.Byte();
+                                    rw.Byte();
+                                    rw.Byte();
+                                }
                             }
                         }
                     }

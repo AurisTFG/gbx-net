@@ -91,7 +91,7 @@ public partial class CPlugSurface : CPlug
 
         surf = surfId switch // ArchiveGmSurf
         {
-            0 => rw.Archive((Sphere)(surf ?? new Sphere())),
+            0 => rw.Archive((Sphere)(surf ?? new Sphere()), chunkVersion),
             1 => rw.Archive((Ellipsoid)(surf ?? new Ellipsoid()), chunkVersion),
             6 => rw.Archive(surf as Box),
             7 => rw.Archive(surf as Mesh), // Mesh
@@ -171,11 +171,9 @@ public partial class CPlugSurface : CPlug
             rw.ArrayArchiveWithGbx<SurfMaterial>(ref n.materials); // ArchiveMaterials
 
             rw.Bytes(ref U02);
-
-            if (version >= 4)
-            {
-                rw.Byte(ref U03);
-            }
+            rw.Int32();
+            rw.Byte();
+            rw.Byte();
 
             if (version >= 1)
             {
@@ -393,12 +391,19 @@ public partial class CPlugSurface : CPlug
 
         public int Id => 0;
         public Vec3? U01 { get; set; }
+        public ushort U02;
 
         public float Size { get => size; set => size = value; }
 
         public void ReadWrite(GameBoxReaderWriter rw, int version = 0)
         {
             rw.Single(ref size);
+            rw.UInt16(ref U02);
+
+            if (version >= 4)
+            {
+                rw.Vec3();
+            }
         }
     }
 
