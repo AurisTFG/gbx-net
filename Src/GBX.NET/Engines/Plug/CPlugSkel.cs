@@ -126,6 +126,8 @@ public class CPlugSkel : CMwNod
                                     rw.Byte();
                                     rw.Byte();
                                     rw.Byte();
+                                    rw.Int32();
+                                    rw.Int32();
                                 }
                             }
                         }
